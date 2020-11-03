@@ -1,4 +1,5 @@
 from conans import ConanFile, CMake, tools
+from conans.errors import ConanInvalidConfiguration
 import os
 
 
@@ -33,6 +34,15 @@ class SimdjsonConan(ConanFile):
     def _build_subfolder(self):
         return "build_subfolder"
 
+    @property
+    def _compilers_minimum_version(self):
+        return {
+            "gcc": "7.4",
+            "Visual Studio": "15.7",
+            "clang": "6",
+            "apple-clang": "9.4",
+        }
+
     def config_options(self):
         if self.settings.os == "Windows":
             del self.options.fPIC
@@ -41,7 +51,13 @@ class SimdjsonConan(ConanFile):
         if self.options.shared:
             del self.options.fPIC
         if self.settings.compiler.cppstd:
-            tools.check_min_cppstd(self, 11)
+            tools.check_min_cppstd(self, 17)
+
+        minimum_version = self._compilers_minimum_version.get(str(self.settings.compiler), False)
+        if not minimum_version:
+            self.output.warn("simdjson requires C++17. Your compiler is unknown. Assuming it supports C++17.")
+        elif tools.Version(self.settings.compiler.version) < minimum_version:
+            raise ConanInvalidConfiguration("simdjson requires C++17, which your compiler does not support.")
 
     def source(self):
         tools.get(**self.conan_data["sources"][self.version])
