@@ -10,8 +10,7 @@ class SimdjsonConan(ConanFile):
     url = "https://github.com/conan-io/conan-center-index"
     homepage = "https://github.com/lemire/simdjson"
     license = "Apache-2.0"
-    exports_sources = ["CMakeLists.txt"]
-    generators = "cmake"
+
     settings = "os", "arch", "compiler", "build_type"
     options = {
         "shared": [True, False],
@@ -24,6 +23,8 @@ class SimdjsonConan(ConanFile):
         "threads": True
     }
 
+    exports_sources = ["CMakeLists.txt"]
+    generators = "cmake"
     _cmake = None
 
     @property
@@ -51,18 +52,30 @@ class SimdjsonConan(ConanFile):
         if self.options.shared:
             del self.options.fPIC
         if self.settings.compiler.cppstd:
-            tools.check_min_cppstd(self, 17)
+            tools.check_min_cppstd(self, "17")
+
+        def lazy_lt_semver(v1, v2):
+            lv1 = [int(v) for v in v1.split(".")]
+            lv2 = [int(v) for v in v2.split(".")]
+            min_length = min(len(lv1), len(lv2))
+            return lv1[:min_length] < lv2[:min_length]
 
         minimum_version = self._compilers_minimum_version.get(str(self.settings.compiler), False)
         if not minimum_version:
-            self.output.warn("simdjson requires C++17. Your compiler is unknown. Assuming it supports C++17.")
-        elif tools.Version(self.settings.compiler.version) < minimum_version:
-            raise ConanInvalidConfiguration("simdjson requires C++17, which your compiler does not support.")
+            self.output.warn("{} requires C++17. Your compiler is unknown. Assuming it supports C++17.".format(self.name))
+        elif lazy_lt_semver(str(self.settings.compiler.version), minimum_version):
+            raise ConanInvalidConfiguration("{} requires C++17, which your compiler does not fully support.".format(self.name))
 
     def source(self):
         tools.get(**self.conan_data["sources"][self.version])
         extracted_dir = self.name + "-" + self.version
         os.rename(extracted_dir, self._source_subfolder)
+
+    def _patch_sources(self):
+        simd_flags_file = os.path.join(self._source_subfolder, "cmake", "simdjson-flags.cmake")
+        tools.replace_in_file(simd_flags_file, "target_compile_options(simdjson-internal-flags INTERFACE -fPIC)", "")
+        tools.replace_in_file(simd_flags_file, "-Werror", "")
+        tools.replace_in_file(simd_flags_file, "/WX", "")
 
     def _configure_cmake(self):
         if self._cmake:
@@ -76,6 +89,7 @@ class SimdjsonConan(ConanFile):
         return self._cmake
 
     def build(self):
+        self._patch_sources()
         cmake = self._configure_cmake()
         cmake.build()
 
